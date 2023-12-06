@@ -1140,6 +1140,60 @@ _.localStorage = {
     }
 };
 
+class ExtensionStorage {
+    constructor() {
+        this.key = '__extension_storage__';
+        this._store = new Map();
+    }
+    is_supported() {
+        var supported = chrome?.storage?.local !== undefined;
+        if (!supported) {
+            console.error('localStorage unsupported; falling back to cookie store');
+        }
+        return supported;
+    }
+    async load() {
+        const s = await chrome.storage.local.get(this.key)
+        const value = s[this.key] ?? {}
+        this._store = new Map(Object.entries(value))
+    }
+    error(msg) {
+        console.error('chromeStorage error: ' + msg);
+    }
+    get(k) {
+        return this._store.get(k) ?? null
+    }
+
+    parse(name) {
+        try {
+            return _.JSONDecode(this.get(name)) || {};
+        } catch (err) {
+            // noop
+        }
+        return null;
+    }
+        
+    set(k, v) {
+        this._store.set(k, v)
+        this.save().catch(console.error)
+    }
+
+    remove(name) {
+        this._store.delete(name)
+        this.save().catch(console.error)
+    }
+
+    async save() {
+        const value = {}
+        this.store.forEach((v, k) => {
+            value[k] = v
+        })
+        await chrome.storage.local.set({ [this.__key]: value })
+    }
+}
+
+_.extensionStorage = new ExtensionStorage()
+
 _.register_event = (function() {
     // written by Dean Edwards, 2005
     // with input from Tino Zijdel - crisp@xs4all.nl

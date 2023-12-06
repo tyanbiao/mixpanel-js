@@ -53,13 +53,15 @@ var MixpanelPersistence = function(config) {
     }
 
     var storage_type = config['persistence'];
-    if (storage_type !== 'cookie' && storage_type !== 'localStorage') {
+    if (storage_type !== 'cookie' && storage_type !== 'localStorage' && storage_type !== 'extensionStorage') {
         console.critical('Unknown persistence type ' + storage_type + '; falling back to cookie');
         storage_type = config['persistence'] = 'cookie';
     }
 
     if (storage_type === 'localStorage' && _.localStorage.is_supported()) {
         this.storage = _.localStorage;
+    } else if (storage_type === 'extensionStorage' && _.extensionStorage.is_supported()) {
+        this.storage = _.extensionStorage;
     } else {
         this.storage = _.cookie;
     }
@@ -137,7 +139,7 @@ MixpanelPersistence.prototype.upgrade = function(config) {
         }
     }
 
-    if (this.storage === _.localStorage) {
+    if (this.storage === _.localStorage || this.storage === _.extensionStorage) {
         old_cookie = _.cookie.parse(this.name);
 
         _.cookie.remove(this.name);
