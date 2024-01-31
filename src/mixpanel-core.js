@@ -66,7 +66,7 @@ var NOOP_FUNC = function() {};
 // http://hacks.mozilla.org/2009/07/cross-site-xmlhttprequest-with-cors/
 // https://developer.mozilla.org/en-US/docs/DOM/XMLHttpRequest#withCredentials
 var USE_XHR = (window.XMLHttpRequest && 'withCredentials' in new XMLHttpRequest());
-var USE_FETCH = !_.isUndefined(fetch) && typeof(fetch) === 'function'
+var USE_FETCH = !_.isUndefined(fetch) && typeof(fetch) === 'function';
 // IE<10 does not support cross-origin XHR's but script tags
 // with defer won't block window.onload; ENQUEUE_REQUESTS
 // should only be true for Opera<12
@@ -243,6 +243,10 @@ MixpanelLib.prototype.init = function (token, config, name) {
     instance._loaded();
 
     return instance;
+};
+
+MixpanelLib.prototype.loadExtensionStroage = function(s) {
+    _.setExtensionStorage(s);
 };
 
 // mixpanel._init(token:string, config:object, name:string)
@@ -575,16 +579,16 @@ MixpanelLib.prototype._send_request = function(url, data, options, callback) {
         }
     } else if (USE_FETCH) {
         try {
-            var headers = this.get_config('xhr_headers');
+            var fetchheaders = this.get_config('xhr_headers');
             if (use_post) {
-                headers['Content-Type'] = 'application/x-www-form-urlencoded';
+                fetchheaders['Content-Type'] = 'application/x-www-form-urlencoded';
             }
 
             var fetchOpts = {
                 method: options.method,
                 mode: 'cors',
                 credentials: 'include',
-                headers: headers,
+                headers: fetchheaders,
                 body: body_data
             };
 

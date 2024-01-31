@@ -3,6 +3,7 @@
   "version": "2.48.1",
   "description": "The official Mixpanel JavaScript browser client library",
   "main": "dist/mixpanel.cjs.js",
+  "types": "index.d.ts",
   "directories": {
     "test": "tests"
   },

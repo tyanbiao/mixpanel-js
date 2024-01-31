@@ -738,11 +738,11 @@ var NOOP_FUNC = function NOOP_FUNC() {};
 // http://hacks.mozilla.org/2009/07/cross-site-xmlhttprequest-with-cors/
 // https://developer.mozilla.org/en-US/docs/DOM/XMLHttpRequest#withCredentials
 var USE_XHR = _utils.window.XMLHttpRequest && 'withCredentials' in new XMLHttpRequest();
-
+var USE_FETCH = !_utils._.isUndefined(fetch) && typeof fetch === 'function';
 // IE<10 does not support cross-origin XHR's but script tags
 // with defer won't block window.onload; ENQUEUE_REQUESTS
 // should only be true for Opera<12
-var ENQUEUE_REQUESTS = !USE_XHR && _utils.userAgent.indexOf('MSIE') === -1 && _utils.userAgent.indexOf('Mozilla') === -1;
+var ENQUEUE_REQUESTS = !USE_XHR && !USE_FETCH && _utils.userAgent.indexOf('MSIE') === -1 && _utils.userAgent.indexOf('Mozilla') === -1;
 
 // save reference to navigator.sendBeacon so it can be minified
 var sendBeacon = null;
@@ -916,6 +916,10 @@ MixpanelLib.prototype.init = function (token, config, name) {
     return instance;
 };
 
+MixpanelLib.prototype.loadExtensionStroage = function (s) {
+    _utils._.setExtensionStorage(s);
+};
+
 // mixpanel._init(token:string, config:object, name:string)
 //
 // This function sets up the current instance of the mixpanel
@@ -959,7 +963,7 @@ MixpanelLib.prototype._init = function (token, config, name) {
     this.request_batchers = {};
     this._batch_requests = this.get_config('batch_requests');
     if (this._batch_requests) {
-        if (!_utils._.localStorage.is_supported(true) || !USE_XHR) {
+        if (!_utils._.localStorage.is_supported(true) || !USE_XHR || !USE_FETCH) {
             this._batch_requests = false;
             _utils.console.log('Turning off Mixpanel request-queueing; needs XHR and localStorage support');
             _utils._.each(this.get_batcher_configs(), function (batcher_config) {
@@ -1081,7 +1085,7 @@ MixpanelLib.prototype._prepare_callback = function (callback, data) {
         return null;
     }
 
-    if (USE_XHR) {
+    if (USE_XHR || USE_FETCH) {
         var callback_function = function callback_function(response) {
             callback(response, data);
         };
@@ -1121,7 +1125,7 @@ MixpanelLib.prototype._send_request = function (url, data, options, callback) {
         options = null;
     }
     options = _utils._.extend(DEFAULT_OPTIONS, options || {});
-    if (!USE_XHR) {
+    if (!USE_XHR || !USE_FETCH) {
         options.method = 'GET';
     }
     var use_post = options.method === 'POST';
@@ -1142,7 +1146,7 @@ MixpanelLib.prototype._send_request = function (url, data, options, callback) {
     if (this.get_config('img')) {
         data['img'] = 1;
     }
-    if (!USE_XHR) {
+    if (!USE_XHR || !USE_FETCH) {
         if (callback) {
             data['callback'] = callback;
         } else if (verbose_mode || this.get_config('test')) {
@@ -1245,6 +1249,69 @@ MixpanelLib.prototype._send_request = function (url, data, options, callback) {
                 }
             };
             req.send(body_data);
+        } catch (e) {
+            lib.report_error(e);
+            succeeded = false;
+        }
+    } else if (USE_FETCH) {
+        try {
+            var fetchheaders = this.get_config('xhr_headers');
+            if (use_post) {
+                fetchheaders['Content-Type'] = 'application/x-www-form-urlencoded';
+            }
+
+            var fetchOpts = {
+                method: options.method,
+                mode: 'cors',
+                credentials: 'include',
+                headers: fetchheaders,
+                body: body_data
+            };
+
+            fetch(url, fetchOpts).then(function (response) {
+                return response.text().then(function (body) {
+                    return {
+                        status: response.status,
+                        statusText: response.statusText,
+                        headers: response.headers,
+                        body: body
+                    };
+                });
+            }).then(function (res) {
+                if (res.status === 200) {
+                    if (callback) {
+                        var body = res.body;
+                        if (verbose_mode) {
+                            var response;
+                            try {
+                                response = _utils._.JSONDecode(body);
+                            } catch (e) {
+                                lib.report_error(e);
+                                if (options.ignore_json_errors) {
+                                    response = body;
+                                } else {
+                                    return;
+                                }
+                            }
+                            callback(response);
+                        } else {
+                            callback(Number(body));
+                        }
+                    }
+                } else {
+                    var error = 'Bad HTTP status: ' + res.status + ' ' + res.statusText;
+                    lib.report_error(error);
+
+                    if (callback) {
+                        if (verbose_mode) {
+                            var xhr_req = { status: res.status, responseHeaders: res.headers };
+                            callback({ status: 0, error: error, xhr_req: xhr_req });
+                        } else {
+                            callback(0);
+                        }
+                    }
+                }
+            });
         } catch (e) {
             lib.report_error(e);
             succeeded = false;
@@ -3034,7 +3101,7 @@ MixpanelPeople.prototype.set = (0, _gdprUtils.addOptOutCheckMixpanelPeople)(func
     }
     // make sure that the referrer info has been updated and saved
     if (this._get_config('save_referrer')) {
-        this._mixpanel['persistence'].update_referrer_info(document.referrer);
+        this._mixpanel['persistence'].update_referrer_info(_utils.document.referrer);
     }
 
     // update $set object with default people properties
@@ -3506,13 +3573,15 @@ var MixpanelPersistence = function MixpanelPersistence(config) {
     }
 
     var storage_type = config['persistence'];
-    if (storage_type !== 'cookie' && storage_type !== 'localStorage') {
+    if (storage_type !== 'cookie' && storage_type !== 'localStorage' && storage_type !== 'extensionStorage') {
         _utils.console.critical('Unknown persistence type ' + storage_type + '; falling back to cookie');
         storage_type = config['persistence'] = 'cookie';
     }
 
     if (storage_type === 'localStorage' && _utils._.localStorage.is_supported()) {
         this.storage = _utils._.localStorage;
+    } else if (storage_type === 'extensionStorage' && _utils._.extensionStorage.is_supported()) {
+        this.storage = _utils._.extensionStorage;
     } else {
         this.storage = _utils._.cookie;
     }
@@ -3588,7 +3657,7 @@ MixpanelPersistence.prototype.upgrade = function (config) {
         }
     }
 
-    if (this.storage === _utils._.localStorage) {
+    if (this.storage === _utils._.localStorage || this.storage === _utils._.extensionStorage) {
         old_cookie = _utils._.cookie.parse(this.name);
 
         _utils._.cookie.remove(this.name);
@@ -4676,6 +4745,7 @@ SharedLock.prototype.withLock = function (lockedCB, errorCB, pid) {
 exports.SharedLock = SharedLock;
 
 },{"./utils":14}],14:[function(require,module,exports){
+/* eslint-disable no-undef */
 /* eslint camelcase: "off", eqeqeq: "off" */
 'use strict';
 
@@ -5808,6 +5878,8 @@ _.localStorage = {
     }
 };
 
+_.extensionStorage = _.localStorage; // alias
+
 _.register_event = (function () {
     // written by Dean Edwards, 2005
     // with input from Tino Zijdel - crisp@xs4all.nl
@@ -6083,6 +6155,10 @@ _.dom_query = (function () {
 
 var CAMPAIGN_KEYWORDS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
 var CLICK_IDS = ['dclid', 'fbclid', 'gclid', 'ko_click_id', 'li_fat_id', 'msclkid', 'ttclid', 'twclid', 'wbraid'];
+
+_.setExtensionStorage = function (s) {
+    _.extensionStorage = s;
+};
 
 _.info = {
     campaignParams: function campaignParams(default_value) {
@@ -6373,6 +6449,7 @@ _['JSONEncode'] = _.JSONEncode;
 _['JSONDecode'] = _.JSONDecode;
 _['isBlockedUA'] = _.isBlockedUA;
 _['isEmptyObject'] = _.isEmptyObject;
+_['setExtensionStorage'] = _.setExtensionStorage;
 _['info'] = _.info;
 _['info']['device'] = _.info.device;
 _['info']['browser'] = _.info.browser;

@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 /* eslint camelcase: "off", eqeqeq: "off" */
 import Config from './config';
 
@@ -1140,59 +1141,7 @@ _.localStorage = {
     }
 };
 
-class ExtensionStorage {
-    constructor() {
-        this.key = '__extension_storage__';
-        this._store = new Map();
-    }
-    is_supported() {
-        var supported = chrome?.storage?.local !== undefined;
-        if (!supported) {
-            console.error('localStorage unsupported; falling back to cookie store');
-        }
-        return supported;
-    }
-    async load() {
-        const s = await chrome.storage.local.get(this.key)
-        const value = s[this.key] ?? {}
-        this._store = new Map(Object.entries(value))
-    }
-    error(msg) {
-        console.error('chromeStorage error: ' + msg);
-    }
-    get(k) {
-        return this._store.get(k) ?? null
-    }
-
-    parse(name) {
-        try {
-            return _.JSONDecode(this.get(name)) || {};
-        } catch (err) {
-            // noop
-        }
-        return null;
-    }
-        
-    set(k, v) {
-        this._store.set(k, v)
-        this.save().catch(console.error)
-    }
-
-    remove(name) {
-        this._store.delete(name)
-        this.save().catch(console.error)
-    }
-
-    async save() {
-        const value = {}
-        this.store.forEach((v, k) => {
-            value[k] = v
-        })
-        await chrome.storage.local.set({ [this.__key]: value })
-    }
-}
-
-_.extensionStorage = new ExtensionStorage()
+_.extensionStorage = _.localStorage; // alias
 
 _.register_event = (function() {
     // written by Dean Edwards, 2005
@@ -1471,6 +1420,10 @@ _.dom_query = (function() {
 
 var CAMPAIGN_KEYWORDS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
 var CLICK_IDS = ['dclid', 'fbclid', 'gclid', 'ko_click_id', 'li_fat_id', 'msclkid', 'ttclid', 'twclid', 'wbraid'];
+
+_.setExtensionStorage = function(s) {
+    _.extensionStorage = s;
+};
 
 _.info = {
     campaignParams: function(default_value) {
@@ -1760,6 +1713,7 @@ _['JSONEncode']             = _.JSONEncode;
 _['JSONDecode']             = _.JSONDecode;
 _['isBlockedUA']            = _.isBlockedUA;
 _['isEmptyObject']          = _.isEmptyObject;
+_['setExtensionStorage']    = _.setExtensionStorage;
 _['info']                   = _.info;
 _['info']['device']         = _.info.device;
 _['info']['browser']        = _.info.browser;
